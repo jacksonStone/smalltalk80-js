@@ -3,7 +3,7 @@
  * TODO:
  * Handle boolean | Ex: True | False
  * block declaration | Ex: [ :m | m ] vs
- * IDK what  | foo | foo <- 1
+ * IDK what  | foo | foo <- 1 ia but I will need to support it.
  */
 interface Token {
   // sc = special character
@@ -16,7 +16,8 @@ interface Token {
     | "identifier"
     | "parameter"
     | "blockArgument"
-    | "comment";
+    | "comment"
+    | "whitespace";
   v: string;
 }
 interface TokenizeArrayResult {
@@ -29,9 +30,62 @@ export class TokenError extends Error {
     this.name = "TokenError";
   }
 }
+export class ConversionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConversionError";
+  }
+}
+export function convertSmalltalkToJavaScript(smallTalkStr: string): string {
+  const tokens = tokenizeArray(smallTalkStr, 0, true);
+  let jsStr = "";
+  for (let i = 0; i < tokens.tokens.length; i++) {
+    const token = tokens.tokens[i];
+    switch (token.t) {
+      case "number":
+        jsStr += token.v;
+        break;
+      case "string":
+        jsStr += `\`${token.v.replace(/`/g, "\\`")}\``;
+        break;
+      case "symbol":
+        jsStr += `Symbol.for(${JSON.stringify(token.v)})`;
+        break;
+      case "comment":
+        jsStr += `// ${token.v}`;
+        break;
+      case "whitespace":
+        jsStr += token.v;
+        break;
+      case "sc":
+        switch (token.v) {
+          case "+":
+          case "-":
+          case "*":
+          case "/":
+            jsStr += token.v;
+            break;
+          // TODO Double check the semantics here - this may not be the correct operator - may need a custom function
+          case "=":
+            jsStr += "==";
+            break;
+          case "==":
+            jsStr += "===";
+            break;
+          default:
+            throw new ConversionError(`Unknown operator: ${token.v}`);
+        }
+        break;
+      default:
+        throw new ConversionError(`Unknown token: ${JSON.stringify(token)}`);
+    }
+  }
+  return jsStr;
+}
 export function tokenizeArray(
   str: string,
   start: number = 0,
+  includeWhitespace: boolean = false
 ): TokenizeArrayResult {
   const tokens: Token[] = [];
   let i = start;
@@ -39,8 +93,16 @@ export function tokenizeArray(
 
   while (i < n) {
     // Skip any leading whitespace
-    while (i < n && isWhitespace(str[i])) {
-      i++;
+    if (isWhitespace(str[i])) {
+      let v = "";
+      while (isWhitespace(str[i])) {
+        v += str[i];
+        i++;
+      }
+      if (includeWhitespace) {
+        tokens.push({ t: "whitespace", v });
+      }
+      continue;
     }
     if (i >= n) break;
 
@@ -151,6 +213,7 @@ export function tokenizeArray(
         v += str[i];
         i++;
       }
+      i++;
       tokens.push({ t: "comment", v });
       continue;
     }
